@@ -62,6 +62,14 @@ func (f *FilterBuilder) String() (string, error) {
 	return goldap.DecompileFilter(f.packet)
 }
 
+// RemoveByPlaceholders removes all filter components that contain one of the given placeholders.
+func (f *FilterBuilder) RemoveByPlaceholders(placeholders []string) {
+	if f.packet == nil {
+		return
+	}
+	f.packet = removeMatchingPacket(f.packet, placeholders)
+}
+
 // NewFilterBuilder parse FilterBuilder from string
 func NewFilterBuilder(filter string) (*FilterBuilder, error) {
 	f := normalizeFilter(filter)
@@ -85,4 +93,67 @@ func normalizeFilter(filter string) string {
 		return norFilter
 	}
 	return "(" + norFilter + ")"
+}
+
+// removeMatchingPacket recursively traverses the filter packet tree
+// and removes any packet (node) that contains one of the placeholders.
+// Returns the cleaned packet or nil if the packet should be removed.
+func removeMatchingPacket(p *ber.Packet, placeholders []string) *ber.Packet {
+	if p == nil {
+		return nil
+	}
+	// If this packet or its immediate children contain a placeholder, remove it entirely
+	if packetOrImmediateChildContainsPlaceholder(p, placeholders) {
+		return nil
+	}
+	// Otherwise, recursively process the children packets
+	var newChildren []*ber.Packet
+	for _, child := range p.Children {
+		cleaned := removeMatchingPacket(child, placeholders)
+		if cleaned != nil {
+			newChildren = append(newChildren, cleaned)
+		}
+	}
+	// If all children were removed but this node had children before, remove this node as well
+	if len(newChildren) == 0 && len(p.Children) > 0 {
+		return nil
+	}
+	// If this node is a logical AND or OR and has only one child left, flatten the node to simplify the filter
+	if (p.Tag == goldap.FilterAnd || p.Tag == goldap.FilterOr) && len(newChildren) == 1 {
+		return newChildren[0]
+	}
+	// Update the node's children to the filtered children and return it
+	p.Children = newChildren
+	return p
+}
+
+// packetOrImmediateChildContainsPlaceholder checks whether the given packet
+// or any of its immediate children contain any of the specified placeholders in their string values.
+func packetOrImmediateChildContainsPlaceholder(p *ber.Packet, placeholders []string) bool {
+	if p == nil {
+		return false
+	}
+	valsToCheck := []string{}
+	// Check the value of this packet if it's a string
+	if str, ok := p.Value.(string); ok {
+		valsToCheck = append(valsToCheck, str)
+	}
+	// Also check the values of immediate child packets if they are strings
+	for _, child := range p.Children {
+		if child == nil {
+			continue
+		}
+		if str, ok := child.Value.(string); ok {
+			valsToCheck = append(valsToCheck, str)
+		}
+	}
+	// Return true if any placeholder is found in any of the checked values
+	for _, val := range valsToCheck {
+		for _, ph := range placeholders {
+			if strings.Contains(val, ph) {
+				return true
+			}
+		}
+	}
+	return false
 }

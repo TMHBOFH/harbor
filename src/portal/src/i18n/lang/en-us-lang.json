@@ -945,7 +945,7 @@
             "LDAP_GROUP_BASE_DN": "LDAP Group Base DN",
             "LDAP_GROUP_BASE_DN_INFO": "The base DN from which to look up a group in LDAP/AD. This field cannot be empty if you need to enable the LDAP group related feature.",
             "LDAP_GROUP_FILTER": "LDAP Group Filter",
-            "LDAP_GROUP_FILTER_INFO": "The filter to search for LDAP/AD groups. For OpenLDAP: objectclass=groupOfNames. For Active Directory: objectclass=group. This field cannot be empty if you need the LDAP group-related feature.",
+            "LDAP_GROUP_FILTER_INFO": "The filter to search for LDAP/AD groups. For OpenLDAP: objectclass=groupOfNames. For Active Directory: objectclass=group. This field cannot be empty if you need the LDAP group-related feature. To support nested group resolution, please look at the documentation.",
             "LDAP_GROUP_GID": "LDAP Group GID",
             "LDAP_GROUP_GID_INFO": "The attribute used in a search to match a user, it could be uid, cn or other attributes depending on your LDAP/AD. The group in Harbor is named with this attribute by default. This field cannot be empty if you need to enable the LDAP group related feature.",
             "LDAP_GROUP_ADMIN_DN": "LDAP Group Admin DN",

@@ -108,3 +108,61 @@ func TestFilterBuilder_Or(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterBuilder_RemoveByPlaceholders(t *testing.T) {
+	tests := []struct {
+		name         string
+		inputFilter  string
+		placeholders []string
+		expected     string
+	}{
+		{
+			name:         "Removes UserDN filter",
+			inputFilter:  "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:={{.UserDN}}))",
+			placeholders: []string{"{{.UserDN}}"},
+			expected:     "(objectClass=group)",
+		},
+		{
+			name:         "Removes Username filter",
+			inputFilter:  "(&(cn=Admins)(uid={{.Username}}))",
+			placeholders: []string{"{{.Username}}"},
+			expected:     "(cn=Admins)",
+		},
+		{
+			name:         "Removes both UserDN and Username",
+			inputFilter:  "(&(cn=Admins)(uid={{.Username}})(member={{.UserDN}}))",
+			placeholders: []string{"{{.Username}}", "{{.UserDN}}"},
+			expected:     "(cn=Admins)",
+		},
+		{
+			name:         "Leaves untouched if no match",
+			inputFilter:  "(&(cn=Admins)(uid=testuser))",
+			placeholders: []string{"{{.Username}}"},
+			expected:     "(&(cn=Admins)(uid=testuser))",
+		},
+		{
+			name:         "Removes entire AND if nothing left",
+			inputFilter:  "(&(uid={{.Username}}))",
+			placeholders: []string{"{{.Username}}"},
+			expected:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder, err := NewFilterBuilder(tt.inputFilter)
+			if err != nil {
+				t.Fatalf("Failed to build filter: %v", err)
+			}
+			builder.RemoveByPlaceholders(tt.placeholders)
+
+			result, err := builder.String()
+			if err != nil {
+				t.Fatalf("Error building filter string: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected: %s, got: %s", tt.expected, result)
+			}
+		})
+	}
+}

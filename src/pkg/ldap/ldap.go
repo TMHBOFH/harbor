@@ -15,12 +15,14 @@
 package ldap
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
+	"text/template"
 	"time"
 
 	goldap "github.com/go-ldap/ldap/v3"
@@ -178,6 +180,24 @@ func (s *Session) SearchUser(username string) ([]model.User, error) {
 				}
 			}
 			u.GroupDNList = groupDNList
+		}
+		if containsGroupFilterVars(s.groupCfg.Filter) {
+			log.Debugf("Searching for nested groups")
+			nestedGroupDNList := make([]string, 0)
+			nestedGroupFilter, err := createNestedGroupFilter(s.groupCfg.Filter, ldapEntry.DN, username)
+			if err != nil {
+				return nil, err
+			}
+			result, err := s.SearchLdapAttribute(s.groupCfg.BaseDN, nestedGroupFilter, []string{s.groupCfg.NameAttribute})
+			if err != nil {
+				return nil, err
+			}
+			for _, groupEntry := range result.Entries {
+				nestedGroupDNList = append(nestedGroupDNList, strings.TrimSpace(groupEntry.DN))
+				log.Debugf("Found group %v", groupEntry.DN)
+			}
+			u.GroupDNList = nestedGroupDNList
+			log.Debugf("Done searching for nested groups")		
 		}
 		u.DN = ldapEntry.DN
 		ldapUsers = append(ldapUsers, u)
@@ -413,6 +433,9 @@ func createGroupSearchFilter(baseFilter, groupName, groupNameAttr string) (strin
 		log.Errorf("failed to create group search filter:%v", baseFilter)
 		return "", err
 	}
+	if containsGroupFilterVars(baseFilter) {	
+		base.RemoveByPlaceholders([]string{"{{.UserDN}}", "{{.Username}}"})
+	}
 	groupName = goldap.EscapeFilter(groupName)
 	gFilterStr := ""
 	// when groupName is empty, search all groups in current base DN
@@ -429,4 +452,39 @@ func createGroupSearchFilter(baseFilter, groupName, groupNameAttr string) (strin
 	}
 	fb := base.And(gFilter)
 	return fb.String()
+}
+
+// createNestedGroupFilter - Create nested group search filter for user
+func createNestedGroupFilter(gFilter, userDN string, username string) (string, error) {
+	// Parse the configuration as a template.
+	t, err := template.New("filterTemplate").Parse(gFilter)
+	if err != nil {
+		log.Errorf("LDAP nested group search failed has template compilation error:%v", gFilter)
+		return "", err
+	}
+	// Build tcontext to pass to template - we will be replace UserDn and Username vars.
+	tcontext := struct {
+		UserDN   string
+		Username string
+	}{
+		goldap.EscapeFilter(userDN),
+		goldap.EscapeFilter(username),
+	}
+
+	var renderedTemplate bytes.Buffer
+	if err := t.Execute(&renderedTemplate, tcontext); err != nil {
+		log.Errorf("LDAP nested group search failed has template parsing error:%v", gFilter)
+		return "", err
+	}
+	
+	nFilter, err := NewFilterBuilder(renderedTemplate.String())
+	if err != nil {
+		log.Errorf("failed to create group search filter:%v", renderedTemplate.String())
+		return "", err
+	}
+	return nFilter.String()
+}
+
+func containsGroupFilterVars(s string) bool {
+	return strings.Contains(s, "{{.Username}}") || strings.Contains(s, "{{.UserDN}}")
 }
